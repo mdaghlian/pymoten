@@ -17,9 +17,10 @@
 #
 import numpy as np
 
-
+import torch
 from moten import (utils,
                    core,
+                   core_torch,
                    viz,
                    )
 
@@ -385,10 +386,10 @@ class MotionEnergyPyramid(object):
     def project_stimulus(self,
                          stimulus,
                          filters='all',
-                         quadrature_combination=utils.sqrt_sum_squares,
-                         output_nonlinearity=utils.log_compress,
+                         quadrature_combination=None,
+                         output_nonlinearity=None,
                          dtype='float32',
-                         use_cuda=False):
+                         use_torch=False):
         '''Compute the motion energy filter responses to the stimulus.
 
         Parameters
@@ -413,12 +414,28 @@ class MotionEnergyPyramid(object):
         -------
         filter_responses : np.ndarray, (nimages, nfilters)
         '''
+        if use_torch:
+            dtype = torch.float32
+        if quadrature_combination is None:
+            if use_torch:
+                quadrature_combination=utils.sqrt_sum_squares_TORCH
+            else:
+                quadrature_combination=utils.sqrt_sum_squares
+        if output_nonlinearity is None:
+            if use_torch:
+                output_nonlinearity=utils.log_compress_TORCH
+            else:
+                output_nonlinearity=utils.log_compress
+
         if filters == 'all':
             filters = self.filters
 
         vdim, hdim = self.definition.stimulus_vhsize
-
-        output = core.project_stimulus(stimulus,
+        if use_torch:
+            proj_func = core_torch.project_stimulus_TORCH
+        else:
+            proj_func = core.project_stimulus
+        output = proj_func(stimulus, 
                                        filters,
                                        quadrature_combination=quadrature_combination,
                                        output_nonlinearity=output_nonlinearity,

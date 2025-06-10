@@ -36,6 +36,20 @@ def pointwise_square(data):
     '''
     return data**2
 
+import torch
+def log_compress_TORCH(x, offset=1e-05):
+    '''Computes log(x + epsilon) element-wise using PyTorch'''
+    return torch.log(x + offset)
+
+def sqrt_sum_squares_TORCH(x, y):
+    '''Computes (x^2 + y^2)^(1/2) element-wise using PyTorch'''
+    return torch.sqrt(x**2 + y**2)
+
+def pointwise_square_TORCH(data):
+    '''Computes x^2 element-wise using PyTorch'''
+    return data**2
+
+
 
 class DotDict(dict):
     '''A dictionary with dot syntax.

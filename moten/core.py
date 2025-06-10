@@ -310,7 +310,7 @@ def dotspatial_frames(spatial_gabor_sin, spatial_gabor_cos,
         The quadrature pair can be combined: (x^2 + y^2)^0.5
     '''
     gabors = np.asarray([spatial_gabor_sin.ravel(),
-                         spatial_gabor_cos.ravel()])
+                         spatial_gabor_cos.ravel()]) # shape is 2 x nimages
     # dot the gabors with the stimulus
     mask = np.abs(gabors).sum(0) > masklimit
     gabor_prod = (gabors[:,mask].squeeze() @ stimulus.T[mask].squeeze()).T
