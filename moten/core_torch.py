@@ -326,6 +326,7 @@ def dotspatial_frames_TORCH(spatial_gabor_sin, spatial_gabor_cos,
 
     return gsin, gcos
 import torch.nn.functional as F
+
 def dotdelay_frames_TORCH(
     spatial_gabor_sin,
     spatial_gabor_cos,
@@ -376,6 +377,7 @@ def dotdelay_frames_TORCH(
     num_filters, P = spatial_gabor_sin.shape  # num_filters: num_filters, P: spatial_pixels
     N_total = batch.shape[0]        # N_total: total_frames
     T = temporal_gabor_sin.shape[1] # T: temporal_filter_width
+    even_T = (T %2 ==0)
 
     # --- 1. Vectorized Spatial Convolution ---
     # Apply mask: Sum absolute values of sine and cosine components for each spatial filter.
@@ -417,12 +419,19 @@ def dotdelay_frames_TORCH(
         current_movie_sin = spatial_sin_split[i] # Shape (N_movie_i, num_filters)
         current_movie_cos = spatial_cos_split[i] # Shape (N_movie_i, num_filters)
 
-        # Reshape current movie's spatial responses for `conv1d`:
-        # From (N_movie_i, num_filters) to (1, num_filters, N_movie_i)
-        # The .T transposes to (num_filters, N_movie_i), then unsqueeze(0) adds batch dim.
-        input_sin_for_conv = current_movie_sin.T.unsqueeze(0) # (1, num_filters, N_movie_i)
-        input_cos_for_conv = current_movie_cos.T.unsqueeze(0) # (1, num_filters, N_movie_i)
-
+        if even_T:
+            pad_left  = T // 2
+            pad_right = T - 1 - pad_left
+            input_sin_for_conv = F.pad(current_movie_sin.T.unsqueeze(0),
+                                    (pad_left, pad_right))
+            input_cos_for_conv = F.pad(current_movie_cos.T.unsqueeze(0),
+                                    (pad_left, pad_right))
+            padding = 0
+        else:
+            input_sin_for_conv = current_movie_sin.T.unsqueeze(0)
+            input_cos_for_conv = current_movie_cos.T.unsqueeze(0)
+            padding = (T - 1) // 2
+            
         # Perform the 1D convolutions for each term for the current movie
         # Output shape: (1, num_filters, N_movie_i)
         conv_sin_cos = F.conv1d(input_sin_for_conv, kernel_cos, padding=padding, groups=num_filters)
@@ -442,81 +451,3 @@ def dotdelay_frames_TORCH(
     channel_cos = torch.cat(convolved_cos_list, dim=0)
 
     return channel_sin, channel_cos
-
-# def dotdelay_frames_TORCH(spatial_gabor_sin, spatial_gabor_cos,
-#                     temporal_gabor_sin, temporal_gabor_cos,
-#                     batch,
-#                     masklimit=0.001):
-#     '''Convolve the motion energy filter with a stimulus in PyTorch
-
-#     Parameters
-#     ----------
-#     spatial_gabor_sin : torch.Tensor, F x P
-#     spatial_gabor_cos : torch.Tensor, F x P
-#         Spatial Gabor quadrature pair
-    
-#     temporal_gabor_sin : torch.Tensor, (T,)
-#     temporal_gabor_cos : torch.Tensor, (T,)
-#         Temporal gabor quadrature pair
-
-#     batch : torch.Tensor, (nframes x P)
-#         Movie frames with spatial dimension flattened
-#     masklimit : float
-#         Threshold to find the non-zero filter region
-
-#     Returns
-#     -------
-#     channel_sin, channel_cos : torch.Tensor, (nimages,)
-#         Motion‐energy filter responses
-#     '''
-#     # 1) get the spatial filter outputs per frame
-#     gabor_sin, gabor_cos = dotspatial_frames_TORCH(
-#         spatial_gabor_sin, spatial_gabor_cos, batch, masklimit=masklimit
-#     )
-    
-#     # shape (nimages,) each
-#     nimages = gabor_sin.shape[0]
-
-#     # 2) pack into (nimages, 2)
-#     gabor_prod = torch.stack([gabor_sin, gabor_cos], dim=1)
-
-#     # 3) pack temporal filters into (2, T)
-#     temporal = torch.stack([temporal_gabor_sin, temporal_gabor_cos], dim=0)  # (2, T)
-#     T = temporal.shape[1]
-
-#     # 4) compute the cross‐quadrature delay outputs
-#     #    outs[i,t] = sin_i * cos_temporal[t] + cos_i * sin_temporal[t]
-#     #    outc[i,t] = -sin_i * sin_temporal[t] + cos_i * cos_temporal[t]
-#     sin_i = gabor_prod[:, 0:1]           # (nimages,1)
-#     cos_i = gabor_prod[:, 1:2]           # (nimages,1)
-#     sin_t = temporal[0:1, :]             # (1,T)
-#     cos_t = temporal[1:2, :]             # (1,T)
-
-#     outs = sin_i @ cos_t + cos_i @ sin_t     # (nimages, T)
-#     outc = -sin_i @ sin_t + cos_i @ cos_t     # (nimages, T)
-
-#     # 5) roll each column by its delay to align in time
-#     #    delays = arange(T) - ceil(T/2) + 1
-#     tdxc = int(torch.ceil(torch.tensor(T / 2.0)).item())
-#     delays = torch.arange(T, device=outs.device) - tdxc + 1
-
-#     nouts = torch.zeros_like(outs)
-#     noutc = torch.zeros_like(outc)
-#     for t in range(T):
-#         d = int(delays[t].item())
-#         if d == 0:
-#             nouts[:, t] = outs[:, t]
-#             noutc[:, t] = outc[:, t]
-#         elif d > 0:
-#             nouts[d:, t] = outs[:-d, t]
-#             noutc[d:, t] = outc[:-d, t]
-#         else:  # d < 0
-#             nouts[:d, t] = outs[-d:, t]
-#             noutc[:d, t] = outc[-d:, t]
-
-#     # 6) sum across the temporal axis to get final channels
-#     channel_sin = nouts.sum(dim=1)   # (nimages,)
-#     channel_cos = noutc.sum(dim=1)   # (nimages,)
-
-#     return channel_sin, channel_cos
-
