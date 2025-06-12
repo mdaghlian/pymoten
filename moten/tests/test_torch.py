@@ -8,7 +8,7 @@ from moten.core_torch import mk_3d_gabor_TORCH
 from moten.pyramids import MotionEnergyPyramid
 
 
-def compare_gabor_outputs(params, device='cpu', rtol=1e-5, atol=1e-5):
+def compare_gabor_outputs(params, device='cuda'):
     """
     Compare outputs of NumPy and PyTorch gabor generators for given params.
     Returns max absolute differences for each component and timings.
@@ -43,8 +43,8 @@ def test_gabor_parametric():
     stimulus_fps = 60
 
     # Define parameter ranges
-    spatial_freqs = [2.0, 4.0, 8.0, 16.0]
-    temporal_freqs = [0.5, 1.5, 3.0]
+    spatial_freqs = [0.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+    temporal_freqs = [0, 2.0, 4.0]
     directions = [0.0, 45.0, 90.0, 135.0]
 
     base_params = {
@@ -58,7 +58,7 @@ def test_gabor_parametric():
         'temporal_env': 0.25,
         'spatial_phase_offset': math.pi / 4,
     }
-
+    overall_max_diff= -np.inf
     results = []
     for sf in spatial_freqs:
         for tf in temporal_freqs:
@@ -68,6 +68,7 @@ def test_gabor_parametric():
                                'temporal_freq': tf,
                                'direction': dir_deg})
                 res = compare_gabor_outputs(params)
+                overall_max_diff = np.maximum(overall_max_diff, res['max_diffs'])
                 results.append({
                     'spatial_freq': sf,
                     'temporal_freq': tf,
@@ -89,7 +90,7 @@ def test_gabor_parametric():
               f"S_cos={r['max_diff_spatial_cos']:.2e}, "
               f"T_sin={r['max_diff_temporal_sin']:.2e}, "
               f"T_cos={r['max_diff_temporal_cos']:.2e}]")
-
+    print(f"Overall max difference across all filters: {overall_max_diff}")
 
 def test_project_stimulus_perf():
     """
@@ -98,7 +99,7 @@ def test_project_stimulus_perf():
     print("Running project_stimulus performance and correctness test...")
     vhsize = (128, 128)
     stimulus_fps = 60
-    num_frames = 20
+    num_frames = 60
     num_stim = 10
 
     # generate random stimuli
@@ -109,15 +110,18 @@ def test_project_stimulus_perf():
 
     pyramid = MotionEnergyPyramid(stimulus_vhsize=vhsize, stimulus_fps=stimulus_fps)
 
-    # NumPy
-    start_np = time.time()
-    out_np = [pyramid.project_stimulus(stim, use_torch=False) for stim in stim_list]
-    t_np = time.time() - start_np
-
     # Torch
     start_t = time.time()
     out_torch = pyramid.project_stimulus(stim_list, use_torch=True)
     t_torch = time.time() - start_t
+    print(t_torch)
+    # NumPy
+    start_np = time.time()
+    out_np = []
+    for i,stim in enumerate(stim_list):
+        out_np.append(pyramid.project_stimulus(stim, use_torch=False))
+        print(time.time()-start_np)
+    t_np = time.time() - start_np
 
     speedup = t_np / t_torch if t_torch > 0 else float('inf')
     print(f"Torch is {speedup:.2f}x faster than NumPy ({t_torch:.4f}s vs {t_np:.4f}s)")
