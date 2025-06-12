@@ -291,40 +291,6 @@ def mk_3d_gabor_TORCH(vhsize,
 
     return spatial_gabor_sin, spatial_gabor_cos, temporal_gabor_sin, temporal_gabor_cos
 
-def dotspatial_frames_TORCH(spatial_gabor_sin, spatial_gabor_cos,
-                      batch,
-                      masklimit=0.001):
-    '''Dot the spatial gabor filters with the stimulus using PyTorch
-
-    Parameters
-    ----------
-    spatial_gabor_sin : torch.Tensor, F x P
-    spatial_gabor_cos : torch.Tensor, F x P
-        Spatial Gabor quadrature pair
-    batch : torch.Tensor, (nframes x P)
-        Movie frames with spatial dimension flattened
-    masklimit : float
-        Threshold to find the non-zero filter region
-
-    Returns
-    -------
-    gsin : torch.Tensor, F x nimages 
-    gcos : torch.Tensor, F x nimages
-        Filter responses for each frame
-    '''
-    # ===== Spatial projection =====    
-    # -> following dotspatial_frames 
-    gabors = torch.stack([spatial_gabor_sin, spatial_gabor_cos], dim=0)  # shape: (2, F, P)
-    mask = gabors.abs().sum(0) > masklimit
-    masked_gabors = gabors * mask[np.newaxis,...]
-    batch_T = batch.T # P x nframes 
-
-    # Batched matrix multiplication
-    gabor_prod_raw = masked_gabors @ batch_T
-    gsin = gabor_prod_raw[0,:,:]
-    gcos = gabor_prod_raw[1,:,:]
-
-    return gsin, gcos
 import torch.nn.functional as F
 
 def dotdelay_frames_TORCH(
@@ -394,7 +360,28 @@ def dotdelay_frames_TORCH(
 
     # --- 2. Temporal Convolution (Correlation) per Movie ---
     # The previous NumPy `delays` loop implemented a form of correlation.
-    # For `F.conv1d` to perform correlation, the kernel needs to be reversed.
+    # Key aspects of this translation:
+    # 1. Correlation vs. Convolution: The original NumPy code effectively performs
+    #    a correlation (sliding dot product). For `F.conv1d` to replicate this,
+    #    its kernels must be reversed (`torch.flip`).
+    # 2. Input/Kernel Dimensions: `conv1d` expects input as (N, C_in, L_in) and
+    #    kernel as (C_out, C_in / groups, K).
+    #    - We transpose the spatial responses (`.T`) and add a batch dimension
+    #      (`unsqueeze(0)`) to get (1, num_filters, N_movie_i).
+    #    - Temporal filters are unsqueezed to (num_filters, 1, T).
+    # 3. Grouped Convolution: `groups=num_filters` ensures that each temporal
+    #    Gabor filter (kernel) operates independently on its corresponding
+    #    spatial response channel. This maintains the channel-wise processing.
+    # 4. Padding: `padding=(T - 1) // 2` (or `F.pad` for even kernels) maintains
+    #    "same" output length, mirroring the implicit behavior of the NumPy loop
+    #    that produced outputs of the same length as inputs.
+    # 5. Movie Boundaries: The input `batch` can contain frames from multiple
+    #    movies concatenated. Temporal convolution *must not* bleed across movie
+    #    boundaries. Therefore, `torch.split` is used to process each movie's
+    #    spatial responses independently, and `torch.cat` re-combines the results.
+    # 6. Quadrature Combination: The final `channel_sin` and `channel_cos` are
+    #    formed by combining the convolved sine and cosine terms (e.g., sin_spatial @ cos_temporal + cos_spatial @ sin_temporal).
+    #    
     temporal_gabor_sin_rev = torch.flip(temporal_gabor_sin, dims=[-1]) # (num_filters, T)
     temporal_gabor_cos_rev = torch.flip(temporal_gabor_cos, dims=[-1]) # (num_filters, T)
 

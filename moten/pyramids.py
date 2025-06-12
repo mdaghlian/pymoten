@@ -389,7 +389,9 @@ class MotionEnergyPyramid(object):
                          quadrature_combination=None,
                          output_nonlinearity=None,
                          dtype='float32',
-                         use_torch=False):
+                         use_torch=False,
+                         **kwargs,
+                         ):
         '''Compute the motion energy filter responses to the stimulus.
 
         Parameters
@@ -435,12 +437,15 @@ class MotionEnergyPyramid(object):
             proj_func = core_torch.project_stimulus_TORCH
         else:
             proj_func = core.project_stimulus
-        output = proj_func(stimulus, 
-                                       filters,
-                                       quadrature_combination=quadrature_combination,
-                                       output_nonlinearity=output_nonlinearity,
-                                       vhsize=(vdim, hdim),
-                                       dtype=dtype)
+        output = proj_func(
+            stimulus, 
+            filters,
+            quadrature_combination=quadrature_combination,
+            output_nonlinearity=output_nonlinearity,
+            vhsize=(vdim, hdim),
+            dtype=dtype,
+            **kwargs,
+            )
 
         return output
 
